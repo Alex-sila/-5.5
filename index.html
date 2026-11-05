@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CRM Рента</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Библиотеки (CDN) -->
+  <!-- SheetJS — Excel экспорт/импорт -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- jsPDF + html2canvas — PDF квитанции (работает с кириллицей) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+
+  <!-- ============ STICKY HEADER ============ -->
+  <header class="app-header">
+    <div class="header-top">
+      <h1>🏠 CRM Рента</h1>
+      <span class="pro-badge" id="proBadge" hidden>PRO</span>
+    </div>
+
+    <!-- Блок статистики -->
+    <div class="stats-grid">
+      <div class="stat-card stat-income">
+        <span class="stat-label">Доход</span>
+        <span class="stat-value" id="statIncome">0 ₽</span>
+      </div>
+      <div class="stat-card stat-expense">
+        <span class="stat-label">Расходы</span>
+        <span class="stat-value" id="statExpense">0 ₽</span>
+      </div>
+      <div class="stat-card stat-profit">
+        <span class="stat-label">Прибыль</span>
+        <span class="stat-value" id="statProfit">0 ₽</span>
+      </div>
+    </div>
+
+    <!-- Кнопки бэкапа -->
+    <div class="backup-bar">
+      <button class="backup-btn" id="btnExportJson" title="Скачать резервную копию">💾 Бэкап</button>
+      <button class="backup-btn" id="btnImportJson" title="Загрузить резервную копию">📥 Восстановить</button>
+      <button class="backup-btn" id="btnExportExcel" title="Скачать Excel">📊 Excel</button>
+      <button class="backup-btn" id="btnImportExcel" title="Загрузить Excel">📈 Из Excel</button>
+      <!-- Скрытые input для выбора файлов -->
+      <input type="file" id="fileInputJson" accept=".json,application/json" hidden>
+      <input type="file" id="fileInputExcel" accept=".xlsx,.xls" hidden>
+    </div>
+
+    <!-- Поиск -->
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="🔍 Поиск по адресу или ФИО" autocomplete="off">
+    </div>
+  </header>
+
+  <!-- PRO баннер (виден, только если не PRO) -->
+  <div class="pro-banner" id="proBanner">
+    <div class="pro-banner-text">
+      <strong>Купите PRO — 990 ₽ навсегда</strong>
+      <span>Снимаем лимит в 2 квартиры, открываем PDF-квитанции</span>
+    </div>
+    <button class="btn-pro" id="btnBuyPro">Купить PRO</button>
+  </div>
+
+  <!-- ============ СПИСОК ============ -->
+  <main class="app-main">
+    <div id="apartmentList" class="apartment-list"></div>
+    <div id="emptyState" class="empty-state" hidden>
+      <p>Пока нет квартир</p>
+      <p class="hint">Нажмите «+», чтобы добавить первую</p>
+    </div>
+  </main>
+
+  <!-- FAB -->
+  <button class="fab" id="fabAdd" aria-label="Добавить квартиру">+</button>
+
+  <!-- ============ МОДАЛКА: ФОРМА КВАРТИРЫ ============ -->
+  <div class="modal-overlay" id="modalOverlay" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Новая квартира</h2>
+        <button type="button" class="modal-close" id="modalClose">✕</button>
+      </div>
+
+      <form id="apartmentForm" class="modal-body">
+        <input type="hidden" id="apartmentId">
+
+        <fieldset class="form-section">
+          <legend>🏠 Основная информация</legend>
+          <label>Адрес *
+            <input type="text" id="address" required placeholder="г. Москва, ул. Ленина, 1, кв. 5">
+          </label>
+          <label>ФИО жильца
+            <input type="text" id="tenantName" placeholder="Иванов Иван Иванович">
+          </label>
+          <label>Телефон
+            <input type="tel" id="tenantPhone" placeholder="+7 900 000-00-00">
+          </label>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend>💰 Финансы (в месяц)</legend>
+          <label>Аренда, ₽
+            <input type="number" id="rentAmount" min="0" step="100" placeholder="30000">
+          </label>
+          <label>ЖКХ, ₽
+            <input type="number" id="utilitiesAmount" min="0" step="100" placeholder="5000">
+          </label>
+          <label>Аварийка, ₽
+            <input type="number" id="emergencyAmount" min="0" step="100" placeholder="1000">
+          </label>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend>📊 Счетчики (показания)</legend>
+          <div class="meter-row">
+            <label>⚡ Электро (пред.)
+              <input type="number" id="meterElectricPrev" min="0" step="1">
+            </label>
+            <label>⚡ Электро (тек.)
+              <input type="number" id="meterElectricCurr" min="0" step="1">
+            </label>
+          </div>
+          <div class="meter-row">
+            <label>💧 Холодная (пред.)
+              <input type="number" id="meterWaterColdPrev" min="0" step="1">
+            </label>
+            <label>💧 Холодная (тек.)
+              <input type="number" id="meterWaterColdCurr" min="0" step="1">
+            </label>
+          </div>
+          <div class="meter-row">
+            <label>🔥 Горячая (пред.)
+              <input type="number" id="meterWaterHotPrev" min="0" step="1">
+            </label>
+            <label>🔥 Горячая (тек.)
+              <input type="number" id="meterWaterHotCurr" min="0" step="1">
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend>✅ Статусы</legend>
+          <label>Статус оплаты
+            <select id="paymentStatus">
+              <option value="unpaid">Не оплачено</option>
+              <option value="paid">Оплачено</option>
+              <option value="partial">Частично</option>
+            </select>
+          </label>
+          <label>Дата окончания договора
+            <input type="date" id="contractEndDate">
+          </label>
+          <label>Заметки
+            <textarea id="notes" rows="2"></textarea>
+          </label>
+        </fieldset>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" id="btnCancel">Отмена</button>
+          <button type="submit" class="btn btn-primary">Сохранить</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ МОДАЛКА: КУПИТЬ PRO ============ -->
+  <div class="modal-overlay" id="buyProOverlay" hidden>
+    <div class="modal modal-small">
+      <div class="modal-header">
+        <h2>⭐ Купить PRO</h2>
+        <button type="button" class="modal-close" id="buyProClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="pro-desc">
+          Разовая оплата <strong>990 ₽</strong> — навсегда.<br>
+          Без подписок и скрытых платежей.
+        </p>
+        <ul class="pro-features">
+          <li>✅ Без ограничения на количество квартир</li>
+          <li>✅ PDF-квитанции для жильцов</li>
+          <li>✅ Отправка в WhatsApp через «Поделиться»</li>
+          <li>✅ Восстановление при смене телефона</li>
+        </ul>
+        <label>Email для чека *
+          <input type="email" id="proEmail" placeholder="you@example.com" required>
+        </label>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" id="buyProCancel">Отмена</button>
+          <button type="button" class="btn btn-primary" id="buyProPay">Перейти к оплате</button>
+        </div>
+        <p class="pro-restore-link">
+          Уже покупали? <a href="#" id="linkRestore">Восстановить доступ</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ МОДАЛКА: ВОССТАНОВИТЬ PRO ============ -->
+  <div class="modal-overlay" id="restoreProOverlay" hidden>
+    <div class="modal modal-small">
+      <div class="modal-header">
+        <h2>🔄 Восстановить доступ</h2>
+        <button type="button" class="modal-close" id="restoreProClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="pro-desc">
+          Введите email, который указывали при покупке PRO.<br>
+          Доступ будет привязан к этому устройству.
+        </p>
+        <label>Email *
+          <input type="email" id="restoreEmail" placeholder="you@example.com" required>
+        </label>
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" id="restoreProCancel">Отмена</button>
+          <button type="button" class="btn btn-primary" id="restoreProBtn">Восстановить</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Скрытый контейнер для рендера квитанции (перед PDF) -->
+  <div id="receiptTemplate" class="receipt-template" aria-hidden="true"></div>
+
+  <!-- app.js подключаем в конце, чтобы DOM был готов -->
+  <script src="app.js"></script>
+</body>
+</html>
